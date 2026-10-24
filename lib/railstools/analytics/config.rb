@@ -11,7 +11,7 @@ module Railstools
 
       attr_accessor :site, :ingest_key, :endpoint, :enabled,
                     :flush_interval, :max_batch, :open_timeout, :read_timeout,
-                    :ignore_paths, :ignore_user_agents, :logger
+                    :ignore_paths, :ignore_user_agents, :logger, :ip_header
 
       def initialize
         @site = ENV.fetch("RAILSTOOLS_ANALYTICS_SITE", nil)
@@ -37,6 +37,12 @@ module Railstools
 
         @ignore_user_agents = /bot|crawler|spider|scraper|curl|wget|monitor|uptime|healthcheck|kube-probe/i
         @logger = nil
+
+        # O cabeçalho com o IP de quem visita, quando um proxy da frente o escreve
+        # ("CF-Connecting-IP" na Cloudflare). Desligado por padrão: qualquer um pode mandar esse
+        # cabeçalho, e só vale ligar quando o app SÓ é alcançado por esse proxy (ver
+        # `Middleware::Tracking#ip_de`).
+        @ip_header = ENV.fetch("RAILSTOOLS_ANALYTICS_IP_HEADER", nil)
       end
 
       def enabled?
@@ -50,6 +56,12 @@ module Railstools
       def ignore_path?(path) = ignore_paths.any? { |padrao| padrao.match?(path.to_s) }
 
       def ignore_user_agent?(agent) = ignore_user_agents.match?(agent.to_s)
+
+      # "CF-Connecting-IP" -> "HTTP_CF_CONNECTING_IP", a chave do env do Rack.
+      def ip_header_env_key
+        nome = ip_header.to_s.strip
+        "HTTP_#{nome.upcase.tr('-', '_')}" unless nome.empty?
+      end
     end
   end
 end

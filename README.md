@@ -79,6 +79,41 @@ São duas promessas, as duas com teste:
 | `max_batch` | 200 | Tamanho do lote |
 | `ignore_paths` | ativo, healthcheck, favicon… | O que nunca é pageview |
 | `ignore_user_agents` | robôs comuns | Quem não é gente |
+| `ip_header` | `RAILSTOOLS_ANALYTICS_IP_HEADER` (desligado) | Cabeçalho com o IP de quem visita, ex.: `CF-Connecting-IP` |
+
+## O IP de quem visita, atrás de proxy
+
+O servidor do Analytics junta as páginas de uma mesma pessoa pelo IP e pelo navegador (com o sal
+do dia). Se o IP medido for o de um proxy, pessoas diferentes viram uma só, sem erro em lugar
+nenhum: a contagem de visitantes cai e a duração das visitas sobe.
+
+O middleware usa, nesta ordem:
+
+1. o cabeçalho de `ip_header`, quando você liga;
+2. o IP que o Rails já resolveu (`request.remote_ip`), que respeita
+   `config.action_dispatch.trusted_proxies`;
+3. o `Rack::Request#ip`, para app Rack sem Rails.
+
+**Atrás da Cloudflare (ou de outro proxy com IP público)**, diga ao Rails em quem confiar, com
+as faixas publicadas em https://www.cloudflare.com/ips/:
+
+```ruby
+# config/application.rb
+config.action_dispatch.trusted_proxies =
+  ActionDispatch::RemoteIp::TRUSTED_PROXIES + CLOUDFLARE_RANGES.map { IPAddr.new(_1) }
+```
+
+Ou ligue o `ip_header`: `RAILSTOOLS_ANALYTICS_IP_HEADER=CF-Connecting-IP`. **Só faça isso se o
+app for alcançado apenas pela Cloudflare** (firewall fechado para o resto); do contrário, qualquer
+um manda o cabeçalho com o IP que quiser. Com Kamal, o kamal-proxy só repassa o
+`X-Forwarded-For` com `proxy.forward_headers: true`.
+
+## Prefetch não é página vista
+
+O middleware não conta requisição de prefetch: o `Sec-Purpose: prefetch` dos navegadores, o
+`X-Sec-Purpose: prefetch` do Turbo 8 (que busca a página quando o mouse passa no link) e os
+antigos `Purpose` e `X-Moz`. Quando a pessoa clica, a página já veio do prefetch, e contar o
+prefetch somaria visita de quem só passou o mouse.
 
 ## Licença
 

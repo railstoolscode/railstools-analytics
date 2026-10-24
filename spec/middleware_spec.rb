@@ -67,4 +67,61 @@ RSpec.describe Railstools::Analytics::Middleware::Tracking do
 
     expect(Railstools::Analytics.dispatcher.size).to eq(0)
   end
+
+  it "não conta prefetch: o do navegador, o do Turbo e os antigos" do
+    rodar(env: { "HTTP_SEC_PURPOSE" => "prefetch" })
+    rodar(env: { "HTTP_SEC_PURPOSE" => "prefetch;prerender" })
+    rodar(env: { "HTTP_X_SEC_PURPOSE" => "prefetch" })
+    rodar(env: { "HTTP_PURPOSE" => "prefetch" })
+    rodar(env: { "HTTP_X_MOZ" => "prefetch" })
+
+    expect(Railstools::Analytics.dispatcher.size).to eq(0)
+  end
+
+  describe "o IP de quem visita" do
+    # Só o que o middleware entregaria; nada entra na fila nem sai para a rede.
+    before { allow(Railstools::Analytics).to receive(:track_pageview) }
+
+    def ip_medido
+      ip = nil
+      expect(Railstools::Analytics).to have_received(:track_pageview) { |**dados| ip = dados[:ip] }
+      ip
+    end
+
+    # Atrás de um proxy público, o Rack devolve o IP do proxy: todo visitante viraria o mesmo.
+    let(:atras_da_cloudflare) do
+      { "REMOTE_ADDR" => "172.18.0.5", "HTTP_X_FORWARDED_FOR" => "200.150.10.20, 104.16.0.10",
+        "HTTP_CF_CONNECTING_IP" => "200.150.10.20" }
+    end
+
+    it "usa o IP que o Rails resolveu com os proxies confiáveis do app" do
+      rails = Struct.new(:ip) { def to_s = ip }.new("200.150.10.20")
+
+      rodar(env: atras_da_cloudflare.merge("action_dispatch.remote_ip" => rails))
+
+      expect(ip_medido).to eq("200.150.10.20")
+    end
+
+    it "cai no do Rack quando o Rails não resolveu ou levantou erro" do
+      explode = Object.new.tap { |o| def o.to_s = raise("IpSpoofAttackError") }
+
+      rodar(env: { "REMOTE_ADDR" => "203.0.113.7", "action_dispatch.remote_ip" => explode })
+
+      expect(ip_medido).to eq("203.0.113.7")
+    end
+
+    it "usa o cabeçalho configurado antes de tudo" do
+      configurar(ip_header: "CF-Connecting-IP")
+
+      rodar(env: atras_da_cloudflare)
+
+      expect(ip_medido).to eq("200.150.10.20")
+    end
+
+    it "não confia no cabeçalho que ninguém configurou" do
+      rodar(env: atras_da_cloudflare)
+
+      expect(ip_medido).to eq("104.16.0.10")
+    end
+  end
 end

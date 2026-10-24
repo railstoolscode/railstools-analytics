@@ -31,4 +31,13 @@ RSpec.describe Railstools::Analytics::Config do
     expect(config.ignore_user_agent?("Googlebot/2.1")).to be true
     expect(config.ignore_user_agent?("Mozilla/5.0 Chrome/120")).to be false
   end
+
+  it "traduz o cabeçalho de IP para a chave do env do Rack" do
+    config = described_class.new
+
+    expect(config.ip_header_env_key).to be_nil
+
+    config.ip_header = "CF-Connecting-IP"
+    expect(config.ip_header_env_key).to eq("HTTP_CF_CONNECTING_IP")
+  end
 end
